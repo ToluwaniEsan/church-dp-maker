@@ -61,6 +61,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 input[type=color]{width:44px;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:2px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
 #toast.show{opacity:1}
+.crop{position:fixed;inset:0;z-index:50;background:rgba(10,6,18,.72);display:grid;place-items:center;padding-block:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));overscroll-behavior:contain}
+.crop-card{background:var(--surface);color:var(--ink);border-radius:16px;padding:18px;width:min(440px,100%);box-sizing:border-box;display:flex;flex-direction:column;gap:14px;max-height:100%;overflow:auto}
+.crop-title{font-family:var(--display);font-weight:800;font-size:22px;margin:0 0 2px}
+#cc{width:100%;max-width:100%;aspect-ratio:1/1;border-radius:12px;background:#0d0a12;box-shadow:none}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
 </style>
 <div id="app"></div>
@@ -125,9 +129,8 @@ document.getElementById('app').innerHTML = `
       </div></div>
       <div class="step"><span class="num">2</span><div class="step-body">
         <span class="step-title">Fit it in the frame</span>
-        <label class="field" for="zoom">Zoom<input type="range" id="zoom" min="1" max="4" step="0.01" value="1" disabled></label>
-        <p class="small">Drag your photo on the design to move it.</p>
-        <button type="button" class="btn" id="reset" disabled>Reset position</button>
+        <button type="button" class="btn" id="adjust" disabled>Adjust photo</button>
+        <p class="small">Move and resize your photo until it sits right in the frame.</p>
       </div></div>
       <div class="step"><span class="num">3</span><div class="step-body">
         <span class="step-title">Download and share</span>
@@ -187,7 +190,25 @@ document.getElementById('app').innerHTML = `
     </div>
   </aside>
 </main>
-<div id="toast" role="status" aria-live="polite"></div>`;
+<div id="toast" role="status" aria-live="polite"></div>
+<div class="crop" id="crop" hidden role="dialog" aria-modal="true" aria-labelledby="crop-t">
+  <div class="crop-card">
+    <div>
+      <p class="crop-title" id="crop-t">Fit your photo</p>
+      <p class="small">Drag to move. Pinch or use the slider to resize.</p>
+    </div>
+    <canvas id="cc" aria-label="Photo adjuster"></canvas>
+    <div class="row" style="gap:12px;flex-wrap:nowrap">
+      <span class="small" aria-hidden="true">−</span>
+      <input type="range" id="c-zoom" min="1" max="5" step="0.01" value="1" aria-label="Photo size" style="flex:1;width:auto">
+      <span class="small" aria-hidden="true">+</span>
+    </div>
+    <div class="row" style="gap:10px;flex-wrap:nowrap">
+      <button type="button" class="btn" id="c-cancel" style="flex:1">Cancel</button>
+      <button type="button" class="btn primary" id="c-ok" style="flex:1">Use photo</button>
+    </div>
+  </div>
+</div>`;
 
 const cv = $('cv'), ctx = cv.getContext('2d');
 
@@ -217,20 +238,24 @@ async function sampleDesign(){
 }
 
 function frameRect(){ const W=designImg.naturalWidth, H=designImg.naturalHeight, f=S.size*W; return {x:S.cx*W-f/2, y:S.cy*H-f/2, w:f, h:f, W, H}; }
-function pathFrame(c,r){
-  c.beginPath();
-  if(S.shape==='circle'){ c.arc(r.x+r.w/2, r.y+r.h/2, r.w/2, 0, Math.PI*2); }
+function addFrame(c,r){
+  if(S.shape==='circle'){ c.moveTo(r.x+r.w, r.y+r.h/2); c.arc(r.x+r.w/2, r.y+r.h/2, r.w/2, 0, Math.PI*2); }
   else { const rad = S.shape==='rounded' ? r.w*0.14 : 0;
     c.moveTo(r.x+rad,r.y); c.arcTo(r.x+r.w,r.y,r.x+r.w,r.y+r.h,rad); c.arcTo(r.x+r.w,r.y+r.h,r.x,r.y+r.h,rad);
     c.arcTo(r.x,r.y+r.h,r.x,r.y,rad); c.arcTo(r.x,r.y,r.x+r.w,r.y,rad); }
   c.closePath();
 }
-function photoBox(r){
-  const base=Math.max(r.w/photo.naturalWidth, r.h/photo.naturalHeight), s=base*zoom;
-  const w=photo.naturalWidth*s, h=photo.naturalHeight*s;
-  const mx=(w-r.w)/2, my=(h-r.h)/2; ox=Math.max(-mx,Math.min(mx,ox)); oy=Math.max(-my,Math.min(my,oy));
-  return {x:r.x+r.w/2+ox-w/2, y:r.y+r.h/2+oy-h/2, w, h};
+function pathFrame(c,r){ c.beginPath(); addFrame(c,r); }
+// Photo placement is stored relative to the frame (offsets in frame widths), so the
+// adjuster and the flyer always agree whatever their pixel sizes.
+function fitBox(img, r, z, o){
+  const base=Math.max(r.w/img.naturalWidth, r.h/img.naturalHeight), s=base*z;
+  const w=img.naturalWidth*s, h=img.naturalHeight*s;
+  const mx=(w-r.w)/2/r.w, my=(h-r.h)/2/r.w;
+  o.x=Math.max(-mx,Math.min(mx,o.x)); o.y=Math.max(-my,Math.min(my,o.y));
+  return {x:r.x+r.w/2+o.x*r.w-w/2, y:r.y+r.h/2+o.y*r.w-h/2, w, h};
 }
+function photoBox(r){ const o={x:ox,y:oy}; const b=fitBox(photo,r,zoom,o); ox=o.x; oy=o.y; return b; }
 function drawPhoto(c,r,placeholder){
   c.save(); pathFrame(c,r); c.clip();
   if(photo){ const b=photoBox(r); c.drawImage(photo,b.x,b.y,b.w,b.h); }
@@ -287,7 +312,7 @@ function updateUI(){
   $('member').hidden = mode!=='member'; $('setup').hidden = mode!=='setup';
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.mode===mode)));
   $('hint').textContent = mode==='setup' ? 'Drag the dashed frame to where the photo should go.' : (photo ? 'Drag your photo to move it inside the frame.' : 'Your photo will appear in the frame.');
-  ['zoom','reset','dl'].forEach(id=>$(id).disabled=!photo);
+  ['adjust','dl'].forEach(id=>$(id).disabled=!photo);
   $('dirty').hidden = !dirty;
   $('m-name-wrap').hidden = !S.nameOn; $('f-nameon').checked = !!S.nameOn; $('name-opts').hidden = !S.nameOn;
   $('f-namesize').value = S.nameSize; $('f-namec').value = S.nameColor;
@@ -317,19 +342,60 @@ cv.addEventListener('pointermove', e=>{
     S.nx=Math.min(1,Math.max(0,S.nx+dx/W)); S.ny=Math.min(1,Math.max(0,S.ny+dy/H)); dirty=true; $('dirty').hidden=false; }
   else if(mode==='setup'){ const r=frameRect();
     S.cx=Math.min(1,Math.max(0,S.cx+dx/r.W)); S.cy=Math.min(1,Math.max(0,S.cy+dy/r.H)); dirty=true; $('dirty').hidden=false; }
-  else { ox+=dx; oy+=dy; }
+  else { const fw=frameRect().w; ox+=dx/fw; oy+=dy/fw; }
   render();
 });
 ['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,()=>{ drag=null; }));
-cv.addEventListener('wheel', e=>{ if(mode!=='member'||!photo) return; e.preventDefault(); zoom=Math.min(4,Math.max(1,zoom*(e.deltaY<0?1.06:1/1.06))); $('zoom').value=zoom; render(); },{passive:false});
+cv.addEventListener('wheel', e=>{ if(mode!=='member'||!photo) return; e.preventDefault(); zoom=Math.min(5,Math.max(1,zoom*(e.deltaY<0?1.06:1/1.06))); render(); },{passive:false});
+
+// ---- Photo adjuster (opens after taking or choosing a photo) ----
+const cc=$('cc'), cx2=cc.getContext('2d');
+let cImg=null, cZoom=1, cO={x:0,y:0}, cPtrs=new Map(), cPinch=null, cPrevFocus=null;
+function cFrame(){ const S2=cc.width, f=S2*0.76; return {x:(S2-f)/2, y:(S2-f)/2, w:f, h:f}; }
+function cDraw(){
+  if(!cImg) return;
+  const dpr=Math.min(3,window.devicePixelRatio||1), size=Math.round(cc.clientWidth*dpr)||600;
+  if(cc.width!==size){ cc.width=size; cc.height=size; }
+  const r=cFrame(), b=fitBox(cImg,r,cZoom,cO);
+  cx2.clearRect(0,0,size,size); cx2.drawImage(cImg,b.x,b.y,b.w,b.h);
+  cx2.save(); cx2.beginPath(); cx2.rect(0,0,size,size); addFrame(cx2,r); cx2.fillStyle='rgba(10,6,18,0.6)'; cx2.fill('evenodd'); cx2.restore();
+  cx2.save(); pathFrame(cx2,r); cx2.lineWidth=2*dpr; cx2.strokeStyle='#FFFFFF'; cx2.stroke(); cx2.restore();
+  $('c-zoom').value=cZoom;
+}
+function openCrop(img, z, o){
+  cImg=img; cZoom=z; cO={x:o.x,y:o.y}; cPtrs.clear(); cPinch=null;
+  cPrevFocus=document.activeElement; $('crop').hidden=false; document.body.style.overflow='hidden';
+  requestAnimationFrame(()=>{ cDraw(); $('c-ok').focus(); });
+}
+function closeCrop(){ $('crop').hidden=true; document.body.style.overflow=''; cImg=null; if(cPrevFocus&&cPrevFocus.focus) cPrevFocus.focus(); }
+const cPt = e => { const rc=cc.getBoundingClientRect(), k=cc.width/rc.width; return {x:(e.clientX-rc.left)*k, y:(e.clientY-rc.top)*k}; };
+cc.addEventListener('pointerdown', e=>{ cc.setPointerCapture(e.pointerId); cPtrs.set(e.pointerId,cPt(e)); cPinch=null; });
+cc.addEventListener('pointermove', e=>{
+  if(!cPtrs.has(e.pointerId)) return;
+  const prev=cPtrs.get(e.pointerId), now=cPt(e); cPtrs.set(e.pointerId,now);
+  const fw=cFrame().w;
+  if(cPtrs.size===1){ cO.x+=(now.x-prev.x)/fw; cO.y+=(now.y-prev.y)/fw; }
+  else if(cPtrs.size===2){
+    const [a,b]=[...cPtrs.values()], d=Math.hypot(a.x-b.x,a.y-b.y), m={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+    if(cPinch){ cZoom=Math.min(5,Math.max(1,cZoom*d/cPinch.d)); cO.x+=(m.x-cPinch.m.x)/fw; cO.y+=(m.y-cPinch.m.y)/fw; }
+    cPinch={d,m};
+  }
+  cDraw();
+});
+['pointerup','pointercancel','lostpointercapture'].forEach(t=>cc.addEventListener(t,e=>{ cPtrs.delete(e.pointerId); cPinch=null; }));
+cc.addEventListener('wheel', e=>{ e.preventDefault(); cZoom=Math.min(5,Math.max(1,cZoom*(e.deltaY<0?1.06:1/1.06))); cDraw(); },{passive:false});
+$('c-zoom').addEventListener('input', e=>{ cZoom=+e.target.value; cDraw(); });
+$('c-cancel').addEventListener('click', closeCrop);
+$('c-ok').addEventListener('click', ()=>{ photo=cImg; zoom=cZoom; ox=cO.x; oy=cO.y; closeCrop(); $('fallback').hidden=true; updateUI(); render(); });
+$('crop').addEventListener('keydown', e=>{ if(e.key==='Escape') closeCrop(); });
+window.addEventListener('resize', ()=>{ if(!$('crop').hidden) cDraw(); });
+$('adjust').addEventListener('click', ()=>{ if(photo) openCrop(photo, zoom, {x:ox,y:oy}); });
 
 ['photo','photo-cam'].forEach(id=>$(id).addEventListener('change', async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  try{ photo = await loadImg(URL.createObjectURL(f)); zoom=1; ox=0; oy=0; $('fallback').hidden=true; updateUI(); render(); }
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  try{ openCrop(await loadImg(URL.createObjectURL(f)), 1, {x:0,y:0}); }
   catch(err){ toast('That file could not be opened. Try a JPG or PNG photo.'); }
-  e.target.value='';
 }));
-$('zoom').addEventListener('input', e=>{ zoom=+e.target.value; render(); });
 $('m-name').addEventListener('input', e=>{ memberName=e.target.value; render(); });
 $('f-nameon').addEventListener('change', e=>{ S.nameOn=e.target.checked; changed(); });
 $('f-namesize').addEventListener('input', e=>{ S.nameSize=+e.target.value; dirty=true; $('dirty').hidden=false; render(); });
@@ -380,7 +446,6 @@ $('export').addEventListener('click', async ()=>{
   try{ await dlns.save({filename:'index.html', data:new Blob([buildDoc()],{type:'text/html'})}); toast('Website file downloaded'); }
   catch(err){ if(!(err && err.code==='declined')) toast('The file could not be downloaded. Try again.'); }
 });
-$('reset').addEventListener('click', ()=>{ zoom=1; ox=0; oy=0; $('zoom').value=1; render(); });
 
 $('dl').addEventListener('click', async ()=>{
   if(!photo) return;
