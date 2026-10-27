@@ -117,7 +117,10 @@ document.getElementById('app').innerHTML = `
     <div class="group" id="member">
       <div class="step"><span class="num">1</span><div class="step-body">
         <span class="step-title">Add your photo</span>
-        <label class="btn primary filebtn" id="photo-lbl">Choose or take a photo<input type="file" id="photo" accept="image/*"></label>
+        <div class="row" style="gap:8px">
+          <label class="btn primary filebtn" style="flex:1">Take a selfie<input type="file" id="photo-cam" accept="image/*" capture="user"></label>
+          <label class="btn filebtn" style="flex:1">Choose from photos<input type="file" id="photo" accept="image/*"></label>
+        </div>
         <label class="field" for="m-name" id="m-name-wrap">Your name<input type="text" id="m-name" maxlength="40" placeholder="e.g. Sister Grace Ade" autocomplete="name"></label>
       </div></div>
       <div class="step"><span class="num">2</span><div class="step-body">
@@ -285,7 +288,6 @@ function updateUI(){
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.mode===mode)));
   $('hint').textContent = mode==='setup' ? 'Drag the dashed frame to where the photo should go.' : (photo ? 'Drag your photo to move it inside the frame.' : 'Your photo will appear in the frame.');
   ['zoom','reset','dl'].forEach(id=>$(id).disabled=!photo);
-  $('photo-lbl').firstChild.textContent = photo ? 'Change photo' : 'Choose or take a photo';
   $('dirty').hidden = !dirty;
   $('m-name-wrap').hidden = !S.nameOn; $('f-nameon').checked = !!S.nameOn; $('name-opts').hidden = !S.nameOn;
   $('f-namesize').value = S.nameSize; $('f-namec').value = S.nameColor;
@@ -321,12 +323,12 @@ cv.addEventListener('pointermove', e=>{
 ['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,()=>{ drag=null; }));
 cv.addEventListener('wheel', e=>{ if(mode!=='member'||!photo) return; e.preventDefault(); zoom=Math.min(4,Math.max(1,zoom*(e.deltaY<0?1.06:1/1.06))); $('zoom').value=zoom; render(); },{passive:false});
 
-$('photo').addEventListener('change', async e=>{
+['photo','photo-cam'].forEach(id=>$(id).addEventListener('change', async e=>{
   const f=e.target.files[0]; if(!f) return;
   try{ photo = await loadImg(URL.createObjectURL(f)); zoom=1; ox=0; oy=0; $('fallback').hidden=true; updateUI(); render(); }
   catch(err){ toast('That file could not be opened. Try a JPG or PNG photo.'); }
   e.target.value='';
-});
+}));
 $('zoom').addEventListener('input', e=>{ zoom=+e.target.value; render(); });
 $('m-name').addEventListener('input', e=>{ memberName=e.target.value; render(); });
 $('f-nameon').addEventListener('change', e=>{ S.nameOn=e.target.checked; changed(); });
