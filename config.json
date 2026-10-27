@@ -1,0 +1,18 @@
+{
+  "title": "Agbara Nla",
+  "subtitle": "Add your photo, adjust it, then download it and share it anywhere.",
+  "design": "design.jpg?v=1",
+  "shape": "circle",
+  "cx": 0.5000000000000001,
+  "cy": 0.5782291202195162,
+  "size": 0.44,
+  "ring": 8,
+  "ringColor": "#E2B553",
+  "layer": "top",
+  "nameOn": true,
+  "nx": 0.4981706968501686,
+  "nameSize": 50,
+  "nameColor": "#faf9f9",
+  "ny": 0.7898636651089006,
+  "nameFont": "elegant"
+}

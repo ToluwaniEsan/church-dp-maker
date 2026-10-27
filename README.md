@@ -15,9 +15,9 @@ Open the editor at https://toluwaniesan.github.io/church-dp-maker/#setup
 
 There you can upload a new design, choose the frame shape (circle, rounded or square), resize and drag the frame, set the border, and place and style the name box.
 
-Changes in the editor stay on your device until you publish them:
-1. Tap **Download website file (index.html)**.
-2. Upload that file here to replace `index.html` (Add file → Upload files → Commit).
-3. The site updates in a minute or two.
+Tap **Publish changes** in the editor and the live link updates for everyone in about a minute.
+The first time, paste a GitHub access token (fine-grained, this repo only, Contents: Read and write). It is saved on your device only.
+
+Files: `index.html` (the app), `config.json` (frame, name box and text settings), `design.jpg` (the flyer), `preview.jpg` (the picture shown when the link is shared).
 
 Everything runs in the browser. Photos are never uploaded anywhere.
